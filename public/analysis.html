@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分析中 - 智慧相簿系統</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <style>
+        .analysis-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .analysis-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius);
+            padding: 3rem;
+            width: 100%;
+            text-align: center;
+        }
+
+        .progress-circle {
+            width: 200px;
+            height: 200px;
+            margin: 0 auto 2rem;
+            position: relative;
+        }
+
+        .progress-ring {
+            transform: rotate(-90deg);
+        }
+
+        .progress-ring-circle {
+            stroke-dasharray: 565.48;
+            stroke-dashoffset: 565.48;
+            transition: stroke-dashoffset 0.5s ease;
+        }
+
+        .progress-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2.5rem;
+            font-weight: 700;
+        }
+
+        .stage-text {
+            font-size: 1.25rem;
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+
+        .stat-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 1rem;
+            border-radius: var(--radius-sm);
+        }
+
+        .stat-label {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="analysis-container">
+        <div class="analysis-card">
+            <h1 class="title" style="margin-bottom: 1rem;">AI 分析中</h1>
+
+            <!-- 進度圓環 -->
+            <div class="progress-circle">
+                <svg width="200" height="200" class="progress-ring">
+                    <circle class="progress-ring-circle" stroke="url(#gradient)" stroke-width="8" fill="transparent"
+                        r="90" cx="100" cy="100" />
+                    <defs>
+                        <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color:#667eea" />
+                            <stop offset="100%" style="stop-color:#764ba2" />
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <div class="progress-text" id="progressText">0%</div>
+            </div>
+
+            <div class="stage-text" id="stageText">正在初始化...</div>
+
+            <!-- 統計資訊 -->
+            <div class="stats-grid" id="statsGrid" style="display: none;">
+                <div class="stat-item">
+                    <div class="stat-label">已分析照片</div>
+                    <div class="stat-value" id="photoCount">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">已分析影片</div>
+                    <div class="stat-value" id="videoCount">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">總項目數</div>
+                    <div class="stat-value" id="totalCount">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">預計保留</div>
+                    <div class="stat-value" id="selectedCount">0</div>
+                </div>
+            </div>
+
+            <p style="margin-top: 2rem; color: var(--text-muted); font-size: 0.875rem;">
+                ⏱️ 處理時間視相簿大小而定,請耐心等候
+            </p>
+        </div>
+    </div>
+
+    <script src="/js/auth.js"></script>
+    <script src="/js/analysis.js"></script>
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const jobId = urlParams.get('jobId');
+
+        if (!jobId) {
+            alert('缺少任務 ID');
+            window.location.href = '/dashboard.html';
+        }
+
+        // 更新進度圓環
+        function updateProgress(percentage) {
+            const circle = document.querySelector('.progress-ring-circle');
+            const circumference = 2 * Math.PI * 90;
+            const offset = circumference - (percentage / 100) * circumference;
+            circle.style.strokeDashoffset = offset;
+            document.getElementById('progressText').textContent = Math.round(percentage) + '%';
+        }
+
+        // 更新階段文字
+        function updateStage(stage) {
+            const stageTexts = {
+                'fetching': '📥 正在取得相簿內容...',
+                'analyzing': '🤖 AI 分析中...',
+                'analyzing_photos': '📸 正在分析照片品質...',
+                'analyzing_videos': '🎬 正在分析影片內容...',
+                'creating_albums': '📁 正在建立精選相簿...',
+                'completed': '✅ 分析完成!'
+            };
+
+            document.getElementById('stageText').textContent = stageTexts[stage] || stage;
+        }
+
+        // 更新統計資訊
+        function updateStats(data) {
+            if (data.totalPhotos || data.totalVideos) {
+                document.getElementById('statsGrid').style.display = 'grid';
+                document.getElementById('photoCount').textContent = data.currentPhoto || 0;
+                document.getElementById('videoCount').textContent = data.currentVideo || 0;
+                document.getElementById('totalCount').textContent =
+                    (data.totalPhotos || 0) + (data.totalVideos || 0);
+            }
+        }
+
+        // 開始監聽進度
+        monitorProgress(jobId, (status) => {
+            updateProgress(status.progress || 0);
+            updateStage(status.stage || 'processing');
+            updateStats(status);
+
+            // 如果完成,跳轉到結果頁面
+            if (status.status === 'completed') {
+                setTimeout(() => {
+                    window.location.href = `/results.html?jobId=${jobId}`;
+                }, 1500);
+            }
+
+            // 如果失敗,顯示錯誤
+            if (status.status === 'failed') {
+                alert('分析失敗: ' + (status.error || '未知錯誤'));
+                window.location.href = '/dashboard.html';
+            }
+        });
+    </script>
+</body>
+
+</html>

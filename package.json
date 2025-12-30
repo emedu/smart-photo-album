@@ -1,0 +1,36 @@
+{
+  "name": "smart-photo-album-filter",
+  "version": "1.0.0",
+  "description": "AI-powered photo and video filtering system for Google Photos using Gemini API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "google-photos",
+    "gemini",
+    "ai",
+    "photo-filter",
+    "image-analysis"
+  ],
+  "author": "Antigravity AI Assistant",
+  "license": "MIT",
+  "dependencies": {
+    "@google/generative-ai": "^0.1.3",
+    "axios": "^1.13.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "googleapis": "^128.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}

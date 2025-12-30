@@ -1,0 +1,59 @@
+智慧相簿自動過濾與管理系統 (Opal App)
+開發者與業務移交技術文件 (V1.0)
+1. 專案概述 (Project Overview)
+本應用程式（App）基於 Google Opal 實驗平台開發，旨在透過 AI（Gemini 1.5 系列模型）自動化處理 Google Photos 中的巨量素材。系統能針對使用者提供的「相簿分享連結」，自動進行美學分析、動態偵測與分類，並將精選後的內容重新儲存至具備動態命名的全新相簿中。
+核心價值：
+效率提升：省去人工挑選數千張照片與影片的時間。
+品質管控：透過 AI 評分機制，確保最終留存的皆為高畫質、具故事性的素材。
+自動化歸檔：實現「連結輸入 -> AI 篩選 -> 自動存檔」的一鍵式工作流。
+2. 系統架構 (System Architecture)
+App 採用並行處理邏輯，將影像（Images）與影片（Videos）分流處理，確保各類媒體的分析標準精確化。
+流程圖示：
+[Input Photos Link]
+├───→ [Analyze Images (Generate)] ───→ [Render HTML (Output)]
+└───→ [Analyze Video (Generate)] ───→ [Create Album (Output)]
+3. 節點配置詳細說明 (Node Specifications)
+A. 輸入節點 (Input Node)
+名稱：Input Photos Link
+功能：接收使用者輸入的 Google Photos 分享 URL。
+變數：{{Input Photos Link}}
+B. 照片分析節點 (Generate - Analyze Images)
+模型：Gemini 1.5 Flash (建議，兼顧速度與成本)
+System Instruction：
+定義變數 Original_Album_Name 用於提取原始相簿名稱。
+設定預設值 My_Photos 以防抓取失敗。
+限制輸出格式為純媒體清單（No conversational text）。
+核心 Prompt：執行 0-100 分美學評分，保留 > 85 分之照片，並執行連拍去重。
+C. 影片分析節點 (Generate - Analyze Video)
+模型：Gemini 1.5 Pro (建議，具備更強的影像連續性分析能力)
+System Instruction：
+同樣提取 Original_Album_Name。
+限制輸出為結構化 JSON 資料。
+核心 Prompt：辨識動態動作、精彩瞬間、語音清晰度，並過濾晃動或過短的廢片。
+4. 輸出與儲存邏輯 (Output Logic)
+此部分使用 Manual Layout 模式，調用 Google Photos Extension 執行外部操作。
+動態命名規則：
+系統會自動將產出的相簿命名為：
+Selected_Photos_from_{{Original_Album_Name}}
+Selected_Videos_from_{{Original_Album_Name}}
+輸出指令 (以影片為例)：
+Original_Album_Name = "My_Videos"
+Now, take the video list from {{Analyze Video}}. 
+Call the Google Photos Extension to create a new album named 'Selected_Videos_from_{{Original_Album_Name}}'. 
+Save all items to this album and confirm once completed.
+
+
+5. 業務邏輯與產出意義 (Business Logic)
+交接時需向業務方說明，AI 產出的 JSON 或文字清單並非最終產品，而是中間指令。
+JSON 的意義：它包含了影片的 ID、描述（Description）與場景標籤（Tags）。這讓系統具備了「內容索引」的能力，未來可進一步延伸至「智慧搜尋」功能。
+自動化結果：最終結果是直接出現在使用者的 Google Photos 帳號中，無需手動下載或上傳。
+6. 技術環境與限制 (Technical Constraints)
+權限要求：使用者必須在 Opal 的 Add Assets 或瀏覽器中授權 Google Workspace / Google Photos 擴充功能。
+連結限制：AI 目前需透過分享連結存取。若連結失效或設為不公開，工作流將無法讀取。
+模型配額：處理巨量相簿時，受限於 Gemini API 的 Token 限制，建議單次處理素材不超過 500 件。
+7. 後續優化建議 (Future Roadmap)
+多語系支持：目前 System Instruction 以英文為主，未來可優化為支持多國語言標籤。
+自動摘要：可在 Output 節點新增一個「產生旅遊誌 (Generate Blog Post)」的功能，根據選出的照片自動寫一段回顧。
+雲端同步：串接 Google Drive 備份原始清單。
+文件編制日期：2024年12月29日
+編制人員：Gemini 智慧助理

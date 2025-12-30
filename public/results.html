@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分析結果 - 智慧相簿系統</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <style>
+        .results-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .success-icon {
+            width: 100px;
+            height: 100px;
+            margin: 0 auto 2rem;
+            animation: scaleIn 0.5s ease-out;
+        }
+
+        @keyframes scaleIn {
+            from {
+                transform: scale(0);
+            }
+
+            to {
+                transform: scale(1);
+            }
+        }
+
+        .results-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius);
+            padding: 3rem;
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+
+        .stats-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin: 2rem 0;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 2rem;
+            border-radius: var(--radius);
+            border: 1px solid var(--glass-border);
+        }
+
+        .stat-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        .albums-section {
+            margin-top: 3rem;
+        }
+
+        .album-link-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--radius);
+            padding: 2rem;
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: var(--transition);
+        }
+
+        .album-link-card:hover {
+            transform: translateX(8px);
+            border-color: var(--primary);
+        }
+
+        .album-link-info h3 {
+            margin-bottom: 0.5rem;
+            color: var(--text-primary);
+        }
+
+        .album-link-info p {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin-top: 2rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="results-container">
+        <!-- 成功卡片 -->
+        <div class="results-card">
+            <div class="success-icon">
+                <svg viewBox="0 0 100 100" fill="none">
+                    <circle cx="50" cy="50" r="45" stroke="url(#gradient)" stroke-width="4" />
+                    <path d="M30 50 L45 65 L70 35" stroke="url(#gradient)" stroke-width="6" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                    <defs>
+                        <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color:#10b981" />
+                            <stop offset="100%" style="stop-color:#059669" />
+                        </linearGradient>
+                    </defs>
+                </svg>
+            </div>
+
+            <h1 class="title" style="margin-bottom: 1rem;">分析完成!</h1>
+            <p class="subtitle" id="albumName">已成功建立精選相簿</p>
+
+            <!-- 統計資訊 -->
+            <div class="stats-container">
+                <div class="stat-card">
+                    <div class="stat-icon">📸</div>
+                    <div class="stat-number" id="photoStats">0/0</div>
+                    <div class="stat-label">照片 (保留/總數)</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">🎬</div>
+                    <div class="stat-number" id="videoStats">0/0</div>
+                    <div class="stat-label">影片 (保留/總數)</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">⭐</div>
+                    <div class="stat-number" id="avgScore">0</div>
+                    <div class="stat-label">平均評分</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon">⏱️</div>
+                    <div class="stat-number" id="processingTime">0s</div>
+                    <div class="stat-label">處理時間</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 新相簿連結 -->
+        <div class="albums-section">
+            <h2 style="margin-bottom: 1.5rem; text-align: center;">精選相簿</h2>
+            <div id="albumLinks"></div>
+        </div>
+
+        <!-- 操作按鈕 -->
+        <div class="action-buttons">
+            <button class="btn btn-primary" onclick="window.location.href='/dashboard.html'">
+                分析其他相簿
+            </button>
+            <button class="btn btn-primary" style="background: rgba(255,255,255,0.1);" onclick="logout()">
+                登出
+            </button>
+        </div>
+    </div>
+
+    <script src="/js/auth.js"></script>
+    <script src="/js/app.js"></script>
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const jobId = urlParams.get('jobId');
+
+        if (!jobId) {
+            alert('缺少任務 ID');
+            window.location.href = '/dashboard.html';
+        }
+
+        // 載入結果
+        async function loadResults() {
+            try {
+                const result = await getAnalysisResult(jobId);
+
+                if (result.status !== 'completed') {
+                    alert('分析尚未完成');
+                    window.location.href = `/analysis.html?jobId=${jobId}`;
+                    return;
+                }
+
+                // 更新相簿名稱
+                document.getElementById('albumName').textContent =
+                    `來自「${result.originalAlbum.name}」的精選內容`;
+
+                // 更新統計資訊
+                const photoAnalysis = result.analysis.photos;
+                const videoAnalysis = result.analysis.videos;
+
+                document.getElementById('photoStats').textContent =
+                    `${photoAnalysis.selected}/${photoAnalysis.total}`;
+
+                document.getElementById('videoStats').textContent =
+                    `${videoAnalysis.selected}/${videoAnalysis.total}`;
+
+                const avgScore = Math.round(
+                    (photoAnalysis.averageScore + videoAnalysis.averageScore) / 2
+                );
+                document.getElementById('avgScore').textContent = avgScore;
+
+                const timeInSeconds = Math.round(result.processingTime / 1000);
+                document.getElementById('processingTime').textContent =
+                    timeInSeconds < 60 ? `${timeInSeconds}s` : `${Math.round(timeInSeconds / 60)}m`;
+
+                // 顯示新相簿連結
+                const albumLinksHtml = result.newAlbums.map(album => `
+          <a href="${album.productUrl}" target="_blank" class="album-link-card" style="text-decoration: none;">
+            <div class="album-link-info">
+              <h3>${album.name}</h3>
+              <p>${album.itemCount} 個項目 · ${album.type === 'photos' ? '照片' : '影片'}</p>
+            </div>
+            <div style="font-size: 1.5rem;">→</div>
+          </a>
+        `).join('');
+
+                document.getElementById('albumLinks').innerHTML = albumLinksHtml ||
+                    '<p style="text-align: center; color: var(--text-muted);">沒有符合條件的項目</p>';
+
+            } catch (error) {
+                console.error('載入結果失敗:', error);
+                alert('載入結果失敗: ' + error.message);
+                window.location.href = '/dashboard.html';
+            }
+        }
+
+        loadResults();
+    </script>
+</body>
+
+</html>
