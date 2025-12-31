@@ -220,6 +220,161 @@ class AlbumProcessorService {
     }
 
     /**
+     * 處理已解析的公開相簿照片 (Path B)
+     */
+    async processScrapedPhotos(photos, options = {}) {
+        const {
+            photoThreshold = 85,
+            videoThreshold = 80,
+            onProgress = null
+        } = options;
+
+        const jobId = this.generateJobId();
+
+        // 初始化任務狀態
+        this.jobs.set(jobId, {
+            status: 'processing',
+            progress: 0,
+            stage: 'analyzing', // 直接進入分析階段
+            startTime: Date.now()
+        });
+
+        try {
+            logger.info(`[${jobId}] 開始處理公開相簿照片，共 ${photos.length} 張`);
+
+            // 立即返回 jobId，讓調用者可以追蹤進度
+            // 使用 setImmediate 讓處理在背景執行
+            setImmediate(async () => {
+                try {
+                    await this._processScrapedPhotosInternal(jobId, photos, photoThreshold, videoThreshold, onProgress);
+                } catch (error) {
+                    logger.error(`[${jobId}] 背景處理失敗`, error.message);
+                    this.jobs.set(jobId, {
+                        jobId,
+                        status: 'failed',
+                        error: error.message,
+                        progress: 0
+                    });
+                }
+            });
+
+            return { jobId }; // 立即返回，不等待處理完成
+
+        } catch (error) {
+            logger.error(`[${jobId}] 初始化失敗`, error.message);
+            this.jobs.set(jobId, {
+                jobId,
+                status: 'failed',
+                error: error.message,
+                progress: 0
+            });
+            throw error;
+        }
+    }
+
+    /**
+     * 內部方法：實際執行 scraped photos 的處理邏輯
+     */
+    async _processScrapedPhotosInternal(jobId, photos, photoThreshold, videoThreshold, onProgress) {
+        try {
+
+            this.updateJobStatus(jobId, {
+                stage: 'analyzing',
+                progress: 10,
+                totalPhotos: photos.length,
+                totalVideos: 0,
+                albumName: '已匯入的相簿'
+            });
+
+            // 3. 分析照片 (僅支援照片，因為 scraping 很難拿到影片串流)
+            let photoResults = [];
+            if (photos.length > 0) {
+                // 轉換格式以符合 Gemini 服務預期 (如果有需要)
+                const photoItems = photos.map(p => ({
+                    id: p.id,
+                    baseUrl: p.baseUrl,
+                    mimeType: 'image/jpeg'
+                }));
+
+                photoResults = await geminiAIService.analyzePhotos(
+                    photoItems,
+                    photoThreshold,
+                    (progress) => {
+                        this.updateJobStatus(jobId, {
+                            stage: 'analyzing_photos',
+                            progress: 10 + (progress.percentage * 0.8), // 10-90%
+                            currentPhoto: progress.current,
+                            totalPhotos: progress.total
+                        });
+
+                        if (onProgress) onProgress(this.jobs.get(jobId));
+                    }
+                );
+            }
+
+            // 5. 篩選保留的項目
+            const selectedPhotos = photoResults.filter(r => r.recommendation === 'keep');
+
+            logger.info(`[${jobId}] 篩選結果: ${selectedPhotos.length}/${photos.length} 張照片`);
+
+            this.updateJobStatus(jobId, {
+                stage: 'completed',
+                progress: 100
+            });
+
+            // 7. 完成 (不建立相簿，直接回傳結果)
+            const result = {
+                jobId,
+                status: 'completed',
+                progress: 100,
+                originalAlbum: {
+                    id: 'scraped_album',
+                    name: '匯入的分享相簿',
+                    photoCount: photos.length,
+                    videoCount: 0
+                },
+                analysis: {
+                    photos: {
+                        total: photos.length,
+                        analyzed: photoResults.length,
+                        selected: selectedPhotos.length,
+                        averageScore: this.calculateAverageScore(photoResults)
+                    },
+                    videos: {
+                        total: 0,
+                        analyzed: 0,
+                        selected: 0,
+                        averageScore: 0
+                    }
+                },
+                newAlbums: [], // Scraping 模式不自動建立相簿
+                processingTime: Date.now() - this.jobs.get(jobId).startTime,
+                // 額外欄位：將結果詳細資料回傳給前端展示
+                details: {
+                    photos: photoResults
+                }
+            };
+
+            this.jobs.set(jobId, result);
+            logger.info(`[${jobId}] 處理完成`);
+
+            return result;
+
+        } catch (error) {
+            logger.error(`[${jobId}] 處理失敗`, error.message);
+
+            this.jobs.set(jobId, {
+                jobId,
+                status: 'failed',
+                error: error.message,
+                progress: 0
+            });
+
+            throw error;
+        }
+    }
+
+    /**
      * 清理舊任務 (超過 1 小時)
      */
     cleanupOldJobs() {

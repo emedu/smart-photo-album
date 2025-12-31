@@ -63,10 +63,42 @@ router.post('/start', requireAuth, asyncHandler(async (req, res) => {
 }));
 
 /**
+ * POST /api/analysis/start-scraped
+ * 開始分析已解析的公開相簿 (無須登入)
+ */
+router.post('/start-scraped', asyncHandler(async (req, res) => {
+    const { photos, photoThreshold, videoThreshold } = req.body;
+
+    if (!photos || !Array.isArray(photos) || photos.length === 0) {
+        throw new APIError('請提供有效的照片列表', 400);
+    }
+
+    const photoScore = photoThreshold || 85;
+    const videoScore = videoThreshold || 80;
+
+    logger.info(`開始分析公開相簿: ${photos.length} 張照片, 照片門檻: ${photoScore}, 影片門檻: ${videoScore}`);
+
+    // 啟動非同步處理並取得 jobId
+    const result = await albumProcessorService.processScrapedPhotos(photos, {
+        photoThreshold: photoScore,
+        videoThreshold: videoScore
+    });
+
+    res.json({
+        success: true,
+        data: {
+            jobId: result.jobId,
+            message: '公開相簿分析任務已啟動',
+            estimatedTime: '視照片數量而定,請稍候'
+        }
+    });
+}));
+
+/**
  * GET /api/analysis/status/:jobId
  * 查詢分析進度
  */
-router.get('/status/:jobId', requireAuth, (req, res) => {
+router.get('/status/:jobId', (req, res) => {
     const { jobId } = req.params;
 
     const status = albumProcessorService.getJobStatus(jobId);
@@ -88,7 +120,7 @@ router.get('/status/:jobId', requireAuth, (req, res) => {
  * GET /api/analysis/stream/:jobId
  * Server-Sent Events 即時進度推送
  */
-router.get('/stream/:jobId', requireAuth, (req, res) => {
+router.get('/stream/:jobId', (req, res) => {
     const { jobId } = req.params;
 
     // 設定 SSE 標頭

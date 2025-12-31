@@ -1,246 +1,83 @@
-const { google } = require('googleapis');
 const axios = require('axios');
+const cheerio = require('cheerio');
 const { APIError } = require('../utils/errorHandler');
 const logger = require('../utils/logger');
 
 /**
- * Google Photos API 服務
+ * Google Photos Scraping Service (Path B)
+ * 用於解析公開的 Google 相簿連結，繞過官方 API 的限制
  */
 class GooglePhotosService {
     constructor() {
-        this.oauth2Client = new google.auth.OAuth2(
-            process.env.GOOGLE_CLIENT_ID,
-            process.env.GOOGLE_CLIENT_SECRET,
-            process.env.GOOGLE_REDIRECT_URI
-        );
+        // 不需要初始化 OAuth Client
     }
 
     /**
-     * 產生 OAuth 授權 URL
+     * 解析公開相簿連結
+     * @param {string} url - Google Photos 分享連結 (e.g., https://photos.app.goo.gl/...)
      */
-    getAuthUrl() {
-        const scopes = [
-            // ▼▼▼ 讀取權限 (讀取相簿清單必備) ▼▼▼
-            'https://www.googleapis.com/auth/photoslibrary.readonly',
-
-            // ▼▼▼ 寫入權限 (建立相簿、上傳照片必備 - 用來取代原本衝突的超級權限) ▼▼▼
-            'https://www.googleapis.com/auth/photoslibrary.appendonly',
-
-            // ▼▼▼ 分享權限 (如果需要分享功能) ▼▼▼
-            'https://www.googleapis.com/auth/photoslibrary.sharing'
-
-            // ❌ 已移除：'https://www.googleapis.com/auth/photoslibrary' 
-            // 原因：混合使用這個「全開權限」與「唯讀權限」會導致 Google 安全機制鎖死 API。
-        ];
-
-        return this.oauth2Client.generateAuthUrl({
-            access_type: 'offline',
-            scope: scopes,
-            prompt: 'consent', // 強制顯示同意畫面，確保取得新權限
-            include_granted_scopes: true
-        });
-    }
-
-    /**
-     * 交換授權碼取得 Token
-     */
-    async getTokenFromCode(code) {
+    async parseSharedAlbum(url) {
         try {
-            const { tokens } = await this.oauth2Client.getToken(code);
-            this.oauth2Client.setCredentials(tokens);
-            logger.info('成功取得 Access Token');
-            return tokens;
-        } catch (error) {
-            logger.error('取得 Token 失敗', error.message);
-            throw new APIError('無法取得授權,請重新登入', 401);
-        }
-    }
+            logger.info(`開始解析相簿連結: ${url}`);
 
-    /**
-     * 設定 Access Token
-     */
-    setAccessToken(accessToken) {
-        this.oauth2Client.setCredentials({ access_token: accessToken });
-    }
-
-    /**
-     * 取得使用者所有相簿
-     */
-    async listAlbums(accessToken) {
-        try {
-            // 使用 axios 直接呼叫 REST API 以確保最單純的讀取行為
-            const response = await axios.get('https://photoslibrary.googleapis.com/v1/albums', {
+            // 1. 取得網頁內容 (會自動處理轉址)
+            const response = await axios.get(url, {
                 headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Content-Type': 'application/json'
-                },
-                params: {
-                    pageSize: 50
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
                 }
             });
 
-            const albums = response.data.albums || [];
-            logger.info(`成功取得 ${albums.length} 個相簿`);
+            const html = response.data;
+            const $ = cheerio.load(html);
 
-            return albums;
-        } catch (error) {
-            // 詳細錯誤記錄
-            const detailedErrorMessage = error.response?.data
-                ? JSON.stringify(error.response.data)
-                : error.message;
+            // 2. 尋找包含數據的 Script
+            // Google Photos 的數據通常藏在一個 AF_initDataCallback 的函式呼叫中
+            // 我們需要用 Regex 把它挖出來
 
-            logger.error('取得相簿清單失敗:', {
-                message: error.message,
-                status: error.response?.status,
-                data: error.response?.data
-            });
+            // 尋找包含 key: 'ds:0' 或類似結構的 script
+            // 這是一種 heuristic (啟發式) 方法，Google 可能會改，但目前穩定
+            const scriptContent = $('script').map((i, el) => $(el).html()).get().join(' ');
 
-            throw new APIError(`無法取得相簿清單: ${detailedErrorMessage}`, error.response?.status || 500);
-        }
-    }
+            // 嘗試匹配圖片 URL
+            // Google 圖片 URL 通常以 https://lh3.googleusercontent.com/ 開頭
+            // 且通常跟在一個數值寬高後面
+            const regex = /"(https:\/\/lh3\.googleusercontent\.com\/[^"]+)",\s*(\d+),\s*(\d+)/g;
 
-    /**
-     * 取得相簿中的媒體項目 (支援分頁)
-     */
-    async getAlbumItems(albumId, accessToken) {
-        try {
-            this.setAccessToken(accessToken);
+            const photos = [];
+            let match;
+            const uniqueUrls = new Set();
 
-            const photosLibrary = google.photoslibrary({
-                version: 'v1',
-                auth: this.oauth2Client
-            });
+            while ((match = regex.exec(scriptContent)) !== null) {
+                const imageUrl = match[1];
+                const width = parseInt(match[2]);
+                const height = parseInt(match[3]);
 
-            let allItems = [];
-            let pageToken = null;
-
-            do {
-                const response = await photosLibrary.mediaItems.search({
-                    requestBody: {
-                        albumId: albumId,
-                        pageSize: 100,
-                        pageToken: pageToken
-                    }
-                });
-
-                if (response.data.mediaItems) {
-                    allItems = allItems.concat(response.data.mediaItems);
-                }
-
-                pageToken = response.data.nextPageToken;
-                // 減少 debug log 頻率，避免洗版
-                if (allItems.length % 100 === 0) {
-                    logger.debug(`已讀取 ${allItems.length} 個項目...`);
-                }
-
-            } while (pageToken);
-
-            logger.info(`相簿 ${albumId} 讀取完成，共有 ${allItems.length} 個媒體項目`);
-
-            // 分類照片與影片
-            const photos = allItems.filter(item => item.mimeType?.startsWith('image/'));
-            const videos = allItems.filter(item => item.mimeType?.startsWith('video/'));
-
-            return {
-                all: allItems,
-                photos,
-                videos,
-                total: allItems.length,
-                photoCount: photos.length,
-                videoCount: videos.length
-            };
-        } catch (error) {
-            logger.error('取得相簿內容失敗', error.message);
-            throw new APIError('無法取得相簿內容', 500);
-        }
-    }
-
-    /**
-     * 建立新相簿
-     */
-    async createAlbum(title, accessToken) {
-        try {
-            this.setAccessToken(accessToken);
-
-            const photosLibrary = google.photoslibrary({
-                version: 'v1',
-                auth: this.oauth2Client
-            });
-
-            const response = await photosLibrary.albums.create({
-                requestBody: {
-                    album: {
-                        title: title
+                // 過濾掉太小的圖片 (可能是大頭貼或圖示)
+                if (width > 100 && height > 100) {
+                    if (!uniqueUrls.has(imageUrl)) {
+                        uniqueUrls.add(imageUrl);
+                        photos.push({
+                            id: `scraped_${photos.length + 1}`,
+                            baseUrl: imageUrl, // Scraping 出來的 URL 本身就是可用於顯示的
+                            mimeType: 'image/jpeg', // 假設
+                            width,
+                            height,
+                            filename: `photo_${photos.length + 1}.jpg`
+                        });
                     }
                 }
-            });
-
-            logger.info(`成功建立相簿: ${title}`);
-            return response.data;
-        } catch (error) {
-            logger.error('建立相簿失敗', error.message);
-            throw new APIError('無法建立相簿', 500);
-        }
-    }
-
-    /**
-     * 批次新增媒體項目至相簿
-     */
-    async addItemsToAlbum(albumId, mediaItemIds, accessToken) {
-        try {
-            this.setAccessToken(accessToken);
-
-            const photosLibrary = google.photoslibrary({
-                version: 'v1',
-                auth: this.oauth2Client
-            });
-
-            // Google Photos API 限制每次最多 50 個項目
-            const BATCH_SIZE = 50;
-            let addedCount = 0;
-
-            for (let i = 0; i < mediaItemIds.length; i += BATCH_SIZE) {
-                const batch = mediaItemIds.slice(i, i + BATCH_SIZE);
-
-                await photosLibrary.albums.batchAddMediaItems({
-                    albumId: albumId,
-                    requestBody: {
-                        mediaItemIds: batch
-                    }
-                });
-
-                addedCount += batch.length;
-                logger.debug(`已新增 ${addedCount}/${mediaItemIds.length} 個項目`);
             }
 
-            logger.info(`成功新增 ${addedCount} 個項目至相簿`);
-            return { addedCount };
+            if (photos.length === 0) {
+                logger.warn('未能在頁面中找到圖片，可能是 Google 結構變更或連結無效');
+            }
+
+            logger.info(`解析完成，共找到 ${photos.length} 張圖片`);
+            return photos;
+
         } catch (error) {
-            logger.error('新增項目至相簿失敗', error.message);
-            throw new APIError('無法新增項目至相簿', 500);
-        }
-    }
-
-    /**
-     * 取得相簿資訊
-     */
-    async getAlbum(albumId, accessToken) {
-        try {
-            this.setAccessToken(accessToken);
-
-            const photosLibrary = google.photoslibrary({
-                version: 'v1',
-                auth: this.oauth2Client
-            });
-
-            const response = await photosLibrary.albums.get({
-                albumId: albumId
-            });
-
-            return response.data;
-        } catch (error) {
-            logger.error('取得相簿資訊失敗', error.message);
-            throw new APIError('無法取得相簿資訊', 500);
+            logger.error('解析相簿失敗:', error.message);
+            throw new APIError('無法解析相簿連結，請確認連結是否公開有效', 500);
         }
     }
 }

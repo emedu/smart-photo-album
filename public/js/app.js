@@ -57,6 +57,37 @@ async function startAnalysis(albumId, photoThreshold, videoThreshold) {
 }
 
 /**
+ * 開始分析 (公開相簿模式)
+ */
+async function startScrapedAnalysis(photos, photoThreshold, videoThreshold) {
+    try {
+        const response = await fetch(`${API_BASE}/api/analysis/start-scraped`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            // 不需要 credentials: 'include' 因為這個 endpoint 不驗證 session
+            body: JSON.stringify({
+                photos,
+                photoThreshold: parseInt(photoThreshold),
+                videoThreshold: parseInt(videoThreshold)
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || '啟動分析失敗');
+        }
+
+        const data = await response.json();
+        return data.data;
+    } catch (error) {
+        console.error('啟動分析失敗:', error);
+        throw error;
+    }
+}
+
+/**
  * 取得分析結果
  */
 async function getAnalysisResult(jobId) {

@@ -1,109 +1,51 @@
 const express = require('express');
 const router = express.Router();
 const googlePhotosService = require('../services/googlePhotos');
-const { asyncHandler, APIError } = require('../utils/errorHandler');
-const { isValidAlbumId } = require('../utils/validators');
 const logger = require('../utils/logger');
+const { APIError } = require('../utils/errorHandler');
 
 /**
- * 認證中介軟體
+ * 取得相簿清單 (已棄用 - 改用解析網址)
+ * 為了不讓前端舊程式碼報錯，我們保留這個路由但回傳空陣列或錯誤提示
  */
-const requireAuth = (req, res, next) => {
-    if (!req.session.isAuthenticated || !req.session.accessToken) {
-        return res.status(401).json({
-            success: false,
-            error: '未授權,請先登入'
-        });
-    }
-    next();
-};
+router.get('/', (req, res) => {
+    res.status(400).json({
+        error: 'Please use the Parse functionality with a shared link instead of listing albums.',
+        deprecated: true
+    });
+});
 
 /**
- * GET /api/albums
- * 取得使用者所有相簿
+ * 解析公開相簿連結 (核心功能)
+ * POST /api/albums/parse
  */
-router.get('/', requireAuth, asyncHandler(async (req, res) => {
-    const accessToken = req.session.accessToken;
+router.post('/parse', async (req, res, next) => {
+    try {
+        const { url } = req.body;
 
-    logger.info('取得相簿清單');
-    const albums = await googlePhotosService.listAlbums(accessToken);
-
-    res.json({
-        success: true,
-        data: {
-            albums: albums.map(album => ({
-                id: album.id,
-                title: album.title,
-                productUrl: album.productUrl,
-                mediaItemsCount: album.mediaItemsCount,
-                coverPhotoBaseUrl: album.coverPhotoBaseUrl
-            })),
-            count: albums.length
+        if (!url) {
+            throw new APIError('請提供 Google 相簿連結', 400);
         }
-    });
-}));
+
+        logger.info(`收到解析請求: ${url}`);
+        const photos = await googlePhotosService.parseSharedAlbum(url);
+
+        res.json({
+            success: true,
+            count: photos.length,
+            photos: photos // 回傳相片陣列
+        });
+    } catch (error) {
+        next(error);
+    }
+});
 
 /**
- * GET /api/albums/:id
- * 取得特定相簿資訊
+ * 取得相簿內容 (暫時保留路由結構)
  */
-router.get('/:id', requireAuth, asyncHandler(async (req, res) => {
-    const { id } = req.params;
-    const accessToken = req.session.accessToken;
-
-    if (!isValidAlbumId(id)) {
-        throw new APIError('無效的相簿 ID', 400);
-    }
-
-    logger.info(`取得相簿資訊: ${id}`);
-    const album = await googlePhotosService.getAlbum(id, accessToken);
-
-    res.json({
-        success: true,
-        data: album
-    });
-}));
-
-/**
- * GET /api/albums/:id/items
- * 取得相簿中的媒體項目
- */
-router.get('/:id/items', requireAuth, asyncHandler(async (req, res) => {
-    const { id } = req.params;
-    const accessToken = req.session.accessToken;
-
-    if (!isValidAlbumId(id)) {
-        throw new APIError('無效的相簿 ID', 400);
-    }
-
-    logger.info(`取得相簿內容: ${id}`);
-    const items = await googlePhotosService.getAlbumItems(id, accessToken);
-
-    res.json({
-        success: true,
-        data: items
-    });
-}));
-
-/**
- * POST /api/albums/create
- * 建立新相簿
- */
-router.post('/create', requireAuth, asyncHandler(async (req, res) => {
-    const { title } = req.body;
-    const accessToken = req.session.accessToken;
-
-    if (!title || title.trim().length === 0) {
-        throw new APIError('相簿名稱不能為空', 400);
-    }
-
-    logger.info(`建立新相簿: ${title}`);
-    const album = await googlePhotosService.createAlbum(title, accessToken);
-
-    res.json({
-        success: true,
-        data: album
-    });
-}));
+router.get('/:id/items', async (req, res, next) => {
+    // 暫時保留，若未來有需要針對已解析的相簿做分頁讀取可再實作
+    res.status(501).json({ message: 'Not implemented in scraping mode' });
+});
 
 module.exports = router;

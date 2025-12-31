@@ -32,6 +32,12 @@ async function logout() {
 
 // 頁面載入時檢查認證
 window.addEventListener('DOMContentLoaded', async () => {
+    // 檢查是否為 Scraped Mode (路徑 B) - 如果是，則不需要後端驗證
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('mode') === 'scraped') {
+        return; // 直接略過驗證
+    }
+
     const isAuthenticated = await checkAuthStatus();
 
     // 如果在需要認證的頁面但未登入,重新導向至首頁

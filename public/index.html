@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>智慧相簿自動過濾與管理系統</title>
   <link rel="stylesheet" href="/css/styles.css">
 </head>
+
 <body>
   <div class="container">
     <!-- 主頁面 -->
@@ -13,85 +15,125 @@
       <div class="glass-card hero-card">
         <div class="logo">
           <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
-            <circle cx="40" cy="40" r="35" stroke="url(#gradient)" stroke-width="3"/>
-            <path d="M25 40 L35 50 L55 30" stroke="url(#gradient)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="40" cy="40" r="35" stroke="url(#gradient)" stroke-width="3" />
+            <path d="M25 40 L35 50 L55 30" stroke="url(#gradient)" stroke-width="4" stroke-linecap="round"
+              stroke-linejoin="round" />
             <defs>
               <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" style="stop-color:#667eea"/>
-                <stop offset="100%" style="stop-color:#764ba2"/>
+                <stop offset="0%" style="stop-color:#667eea" />
+                <stop offset="100%" style="stop-color:#764ba2" />
               </linearGradient>
             </defs>
           </svg>
         </div>
-        
+
         <h1 class="title">智慧相簿自動過濾系統</h1>
         <p class="subtitle">AI 驅動的照片與影片品質分析工具</p>
-        
+
         <div class="features">
           <div class="feature-item">
+            <span class="icon">🔗</span>
+            <span>貼上相簿連結</span>
+          </div>
+          <div class="feature-item">
             <span class="icon">🤖</span>
-            <span>Gemini AI 智慧分析</span>
+            <span>AI 自動分析</span>
           </div>
           <div class="feature-item">
-            <span class="icon">📸</span>
-            <span>美學評分與篩選</span>
-          </div>
-          <div class="feature-item">
-            <span class="icon">🎬</span>
-            <span>影片動態辨識</span>
-          </div>
-          <div class="feature-item">
-            <span class="icon">📁</span>
-            <span>自動建立精選相簿</span>
+            <span class="icon">✨</span>
+            <span>生成精選相簿</span>
           </div>
         </div>
 
-        <button id="loginBtn" class="btn btn-primary">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-            <path d="M10 0C4.477 0 0 4.477 0 10s4.477 10 10 10 10-4.477 10-10S15.523 0 10 0zm0 18c-4.418 0-8-3.582-8-8s3.582-8 8-8 8 3.582 8 8-3.582 8-8 8z"/>
-            <path d="M10 5c-2.761 0-5 2.239-5 5s2.239 5 5 5 5-2.239 5-5-2.239-5-5-5zm0 8c-1.657 0-3-1.343-3-3s1.343-3 3-3 3 1.343 3 3-1.343 3-3 3z"/>
-          </svg>
-          連接 Google Photos
-        </button>
+        <!-- 網址輸入區 -->
+        <div class="url-input-section" style="margin-top: 30px; width: 100%; max-width: 500px;">
+          <form id="urlForm" style="display: flex; gap: 10px; flex-direction: column;">
+            <input type="text" id="albumUrl" class="form-input"
+              placeholder="請貼上 Google 相簿分享連結 (https://photos.app.goo.gl/...)"
+              style="padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.1); color: white; width: 100%; box-sizing: border-box;"
+              required>
+
+            <button type="submit" id="analyzeBtn" class="btn btn-primary" style="width: 100%;">
+              <span class="icon">⚡</span>
+              <span>開始解析與分析</span>
+            </button>
+          </form>
+        </div>
 
         <div class="info-text">
-          <p>✨ 使用 Google OAuth 2.0 安全認證</p>
-          <p>🔒 您的資料完全保密,不會被儲存</p>
+          <p>✨ 支援公開或擁有連結的相簿</p>
+          <p>🔒 您的照片僅用於分析，不會被儲存</p>
         </div>
       </div>
+    </div>
+
+    <!-- 狀態訊息 -->
+    <div id="statusMessage" class="glass-card" style="display: none; margin-top: 20px; text-align: center;">
+      <div class="loader" id="loader" style="display: none;"></div>
+      <p id="statusText"></p>
     </div>
 
     <!-- 錯誤訊息 -->
     <div id="errorMessage" class="error-message" style="display: none;"></div>
   </div>
 
-  <script src="/js/auth.js"></script>
+  <!-- 移除 auth.js 引用，改寫為直接處理 -->
   <script>
-    // 檢查 URL 參數中的錯誤
-    const urlParams = new URLSearchParams(window.location.search);
-    const error = urlParams.get('error');
-    
-    if (error) {
-      const errorMessages = {
-        'access_denied': '您拒絕了授權請求',
-        'missing_code': '授權過程發生錯誤',
-        'auth_failed': '授權失敗,請重試'
-      };
-      
-      const errorDiv = document.getElementById('errorMessage');
-      errorDiv.textContent = errorMessages[error] || '發生未知錯誤';
-      errorDiv.style.display = 'block';
-      
-      setTimeout(() => {
-        errorDiv.style.display = 'none';
-        window.history.replaceState({}, document.title, '/');
-      }, 5000);
-    }
+    const form = document.getElementById('urlForm');
+    const statusDiv = document.getElementById('statusMessage');
+    const statusText = document.getElementById('statusText');
+    const loader = document.getElementById('loader');
+    const errorDiv = document.getElementById('errorMessage');
+    const analyzeBtn = document.getElementById('analyzeBtn');
 
-    // 登入按鈕事件
-    document.getElementById('loginBtn').addEventListener('click', () => {
-      window.location.href = '/auth/login';
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const url = document.getElementById('albumUrl').value.trim();
+
+      if (!url) return;
+
+      // Reset UI
+      errorDiv.style.display = 'none';
+      statusDiv.style.display = 'block';
+      loader.style.display = 'inline-block';
+      statusText.textContent = '正在解析相簿連結，這可能需要幾秒鐘...';
+      analyzeBtn.disabled = true;
+      analyzeBtn.style.opacity = '0.7';
+
+      try {
+        const response = await fetch('/api/albums/parse', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ url })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          statusText.textContent = `成功找到 ${data.count} 張照片！正在準備分析介面...`;
+
+          // 儲存解析到的照片到 sessionStorage 以便 Dashboard 使用
+          sessionStorage.setItem('scrapedPhotos', JSON.stringify(data.photos));
+          sessionStorage.setItem('currentAlbumTitle', '匯入的分享相簿');
+
+          setTimeout(() => {
+            window.location.href = '/dashboard.html?mode=scraped';
+          }, 1000);
+        } else {
+          throw new Error(data.error || '解析失敗');
+        }
+      } catch (error) {
+        statusDiv.style.display = 'none';
+        errorDiv.textContent = error.message || '無法解析連結，請確認連結是否正確且公開';
+        errorDiv.style.display = 'block';
+      } finally {
+        analyzeBtn.disabled = false;
+        analyzeBtn.style.opacity = '1';
+      }
     });
   </script>
 </body>
+
 </html>

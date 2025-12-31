@@ -141,28 +141,70 @@
     <script src="/js/app.js"></script>
     <script>
         let selectedAlbumId = null;
+        let isScrapedMode = false;
+        let scrapedPhotos = [];
 
-        // 載入相簿清單
+        // 檢查網址參數
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('mode') === 'scraped') {
+            isScrapedMode = true;
+        }
+
+        // 載入相簿清單 (或 Scraped Data)
         async function loadAlbums() {
             try {
-                const albums = await fetchAlbums();
+                if (isScrapedMode) {
+                    // 路徑 B: 使用 SessionStorage 中的資料
+                    const storedPhotos = sessionStorage.getItem('scrapedPhotos');
+                    const storedTitle = sessionStorage.getItem('currentAlbumTitle');
 
-                document.getElementById('loadingState').style.display = 'none';
-                document.getElementById('albumsGrid').style.display = 'grid';
+                    if (!storedPhotos) {
+                        alert('無效的相簿資料，請重新輸入網址');
+                        window.location.href = '/';
+                        return;
+                    }
 
-                const grid = document.getElementById('albumsGrid');
-                grid.innerHTML = albums.map(album => `
-          <div class="album-card" data-album-id="${album.id}">
-            <img src="${album.coverPhotoBaseUrl || ''}" alt="${album.title}" class="album-cover" 
-                 onerror="this.style.display='none'">
-            <div class="album-info">
-              <div class="album-title">${album.title}</div>
-              <div class="album-count">${album.mediaItemsCount || 0} 個項目</div>
-            </div>
-          </div>
-        `).join('');
+                    scrapedPhotos = JSON.parse(storedPhotos);
 
-                // 綁定點擊事件
+                    document.getElementById('loadingState').style.display = 'none';
+                    document.getElementById('albumsGrid').style.display = 'grid';
+
+                    // 渲染虛擬相簿卡片
+                    const grid = document.getElementById('albumsGrid');
+                    const coverUrl = scrapedPhotos.length > 0 ? scrapedPhotos[0].baseUrl : '';
+
+                    grid.innerHTML = `
+                      <div class="album-card" data-album-id="scraped_album">
+                        <img src="${coverUrl}" alt="${storedTitle}" class="album-cover" 
+                             onerror="this.style.display='none'">
+                        <div class="album-info">
+                          <div class="album-title">${storedTitle || '匯入的相簿'}</div>
+                          <div class="album-count">${scrapedPhotos.length} 個項目</div>
+                          <div class="album-count" style="color: var(--primary); margin-top:5px;">✨ 來自公開連結</div>
+                        </div>
+                      </div>
+                    `;
+                } else {
+                    // 路徑 A: 呼叫 API 取得列表 (原始邏輯)
+                    const albums = await fetchAlbums();
+
+                    document.getElementById('loadingState').style.display = 'none';
+                    document.getElementById('albumsGrid').style.display = 'grid';
+
+                    const grid = document.getElementById('albumsGrid');
+                    grid.innerHTML = albums.map(album => `
+                      <div class="album-card" data-album-id="${album.id}">
+                        <img src="${album.coverPhotoBaseUrl || ''}" alt="${album.title}" class="album-cover" 
+                             onerror="this.style.display='none'">
+                        <div class="album-info">
+                          <div class="album-title">${album.title}</div>
+                          <div class="album-count">${album.mediaItemsCount || 0} 個項目</div>
+                        </div>
+                      </div>
+                    `).join('');
+                }
+
+                // 綁定點擊事件 (通用)
                 document.querySelectorAll('.album-card').forEach(card => {
                     card.addEventListener('click', () => {
                         selectedAlbumId = card.dataset.albumId;
@@ -182,10 +224,19 @@
 
             } catch (error) {
                 console.error('載入相簿失敗:', error);
-                document.getElementById('loadingState').innerHTML = `
-          <p style="color: var(--danger);">載入失敗: ${error.message}</p>
-          <button class="btn btn-primary" onclick="location.reload()">重試</button>
-        `;
+
+                // 如果在一般模式下失敗，可能是 Token 過期，引導回登入
+                if (!isScrapedMode) {
+                    document.getElementById('loadingState').innerHTML = `
+                      <p style="color: var(--danger);">載入失敗: 可能需要重新授權</p>
+                      <button class="btn btn-primary" onclick="location.href='/'">回首頁</button>
+                    `;
+                } else {
+                    document.getElementById('loadingState').innerHTML = `
+                      <p style="color: var(--danger);">載入失敗: ${error.message}</p>
+                      <button class="btn btn-primary" onclick="location.reload()">重試</button>
+                    `;
+                }
             }
         }
 
@@ -198,17 +249,39 @@
 
             const photoThreshold = document.getElementById('photoThreshold').value;
             const videoThreshold = document.getElementById('videoThreshold').value;
+            const btn = document.getElementById('startAnalysisBtn');
 
             try {
-                const result = await startAnalysis(selectedAlbumId, photoThreshold, videoThreshold);
-                window.location.href = `/analysis.html?jobId=${result.jobId}`;
+                btn.disabled = true;
+                btn.textContent = '啟動中...';
+
+                let result;
+                if (isScrapedMode) {
+                    // 路徑 B: 呼叫公開分析 API
+                    result = await startScrapedAnalysis(scrapedPhotos, photoThreshold, videoThreshold);
+                } else {
+                    // 路徑 A: 呼叫原始 API
+                    result = await startAnalysis(selectedAlbumId, photoThreshold, videoThreshold);
+                }
+
+                // 保留 mode 參數在跳轉時
+                const analysisUrl = isScrapedMode
+                    ? `/analysis.html?jobId=${result.jobId}&mode=scraped`
+                    : `/analysis.html?jobId=${result.jobId}`;
+                window.location.href = analysisUrl;
             } catch (error) {
                 alert('啟動分析失敗: ' + error.message);
+                btn.disabled = false;
+                btn.textContent = '開始分析';
             }
         });
 
-        // 登出
-        document.getElementById('logoutBtn').addEventListener('click', logout);
+        // 登出 (一般模式才有用，Scraped Mode 隱藏)
+        if (isScrapedMode) {
+            document.getElementById('logoutBtn').style.display = 'none';
+        } else {
+            document.getElementById('logoutBtn').addEventListener('click', logout);
+        }
 
         // 頁面載入時執行
         loadAlbums();

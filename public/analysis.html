@@ -139,10 +139,12 @@
     <script>
         const urlParams = new URLSearchParams(window.location.search);
         const jobId = urlParams.get('jobId');
+        const mode = urlParams.get('mode'); // Detect scraped mode
 
         if (!jobId) {
             alert('缺少任務 ID');
-            window.location.href = '/dashboard.html';
+            const redirectUrl = mode === 'scraped' ? '/dashboard.html?mode=scraped' : '/dashboard.html';
+            window.location.href = redirectUrl;
         }
 
         // 更新進度圓環
@@ -185,17 +187,21 @@
             updateStage(status.stage || 'processing');
             updateStats(status);
 
-            // 如果完成,跳轉到結果頁面
+            // 如果完成,跳轉到結果頁面 (保留 mode 參數)
             if (status.status === 'completed') {
                 setTimeout(() => {
-                    window.location.href = `/results.html?jobId=${jobId}`;
+                    const resultsUrl = mode === 'scraped'
+                        ? `/results.html?jobId=${jobId}&mode=scraped`
+                        : `/results.html?jobId=${jobId}`;
+                    window.location.href = resultsUrl;
                 }, 1500);
             }
 
             // 如果失敗,顯示錯誤
             if (status.status === 'failed') {
                 alert('分析失敗: ' + (status.error || '未知錯誤'));
-                window.location.href = '/dashboard.html';
+                const dashboardUrl = mode === 'scraped' ? '/dashboard.html?mode=scraped' : '/dashboard.html';
+                window.location.href = dashboardUrl;
             }
         });
     </script>
